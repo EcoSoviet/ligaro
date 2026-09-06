@@ -11,13 +11,12 @@ import { SITE_TITLE } from "../lib/blog";
   <main id="main-content" tabindex="-1">
     <h1 class="page-title">Play</h1>
     <p class="intro">
-      Conway's Game of Life, plus a few relatives. Click or drag on the grid
-      to toggle cells, or focus it and use the arrow keys plus space. Play
-      advances generations on its own; Step advances one at a time. Drop in a
-      known pattern, or switch the rule mid-run and watch the same board
-      answer to different laws. Cells cool from signal red toward ink the
-      longer they've survived, so long-lived structures stand out from fresh
-      activity.
+      Conway's Game of Life, plus a few relatives. Click or drag on the grid to
+      toggle cells, or focus it and use the arrow keys plus space. Play advances
+      generations on its own; Step advances one at a time. Drop in a known
+      pattern, or switch the rule mid-run and watch the same board answer to
+      different laws. Cells cool from signal red toward ink the longer they've
+      survived, so long-lived structures stand out from fresh activity.
     </p>
     <div class="game no-print">
       <div class="hud">
@@ -284,7 +283,8 @@ import { SITE_TITLE } from "../lib/blog";
       document.querySelector<HTMLButtonElement>("#clear-grid");
     const patternSelect =
       document.querySelector<HTMLSelectElement>("#pattern-select");
-    const ruleSelect = document.querySelector<HTMLSelectElement>("#rule-select");
+    const ruleSelect =
+      document.querySelector<HTMLSelectElement>("#rule-select");
     const speedInput = document.querySelector<HTMLInputElement>("#speed");
     const speedValue = document.querySelector<HTMLElement>("#speed-value");
     const generationElement =

@@ -237,7 +237,12 @@ describe("PATTERNS", () => {
   });
 
   it("the Gosper glider gun emits a glider every 30 generations", () => {
-    let grid = stampPattern(createEmptyGrid(45, 60), PATTERNS.gosperGliderGun, 0, 0);
+    let grid = stampPattern(
+      createEmptyGrid(45, 60),
+      PATTERNS.gosperGliderGun,
+      0,
+      0
+    );
     const gunCellCount = PATTERNS.gosperGliderGun.length;
     for (let generation = 1; generation <= 30; generation++) {
       grid = nextGeneration(grid);

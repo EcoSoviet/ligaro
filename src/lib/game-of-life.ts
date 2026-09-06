@@ -235,7 +235,10 @@ export type PatternName = keyof typeof PATTERNS;
 The bounding box of a pattern's live-cell offsets, used to centre it on
 the grid before stamping it down.
 */
-export function getPatternSize(pattern: Pattern): { rows: number; cols: number } {
+export function getPatternSize(pattern: Pattern): {
+  rows: number;
+  cols: number;
+} {
   let maxRow = 0;
   let maxCol = 0;
   for (const [row, col] of pattern) {
