@@ -11,9 +11,13 @@ import { SITE_TITLE } from "../lib/blog";
   <main id="main-content" tabindex="-1">
     <h1 class="page-title">Play</h1>
     <p class="intro">
-      Conway's Game of Life. Click or drag on the grid to toggle cells, or focus
-      it and use the arrow keys plus space. Play advances generations on its
-      own; Step advances one at a time.
+      Conway's Game of Life, plus a few relatives. Click or drag on the grid
+      to toggle cells, or focus it and use the arrow keys plus space. Play
+      advances generations on its own; Step advances one at a time. Drop in a
+      known pattern, or switch the rule mid-run and watch the same board
+      answer to different laws. Cells cool from signal red toward ink the
+      longer they've survived, so long-lived structures stand out from fresh
+      activity.
     </p>
     <div class="game no-print">
       <div class="hud">
@@ -35,6 +39,26 @@ import { SITE_TITLE } from "../lib/blog";
         <button type="button" id="step">Step</button>
         <button type="button" id="randomize">Randomize</button>
         <button type="button" id="clear-grid">Clear</button>
+      </div>
+      <div class="select-controls">
+        <label for="pattern-select">
+          Pattern
+          <select id="pattern-select">
+            <option value="" selected>Place a pattern…</option>
+            <option value="glider">Glider</option>
+            <option value="pulsar">Pulsar</option>
+            <option value="gosperGliderGun">Glider gun</option>
+          </select>
+        </label>
+        <label for="rule-select">
+          Rule
+          <select id="rule-select">
+            <option value="conway" selected>Conway — B3/S23</option>
+            <option value="highlife">HighLife — B36/S23</option>
+            <option value="seeds">Seeds — B2/S</option>
+            <option value="dayAndNight">Day &amp; Night — B3678/S34678</option>
+          </select>
+        </label>
       </div>
       <div class="speed-control">
         <label for="speed">Speed</label>
@@ -153,6 +177,47 @@ import { SITE_TITLE } from "../lib/blog";
     cursor: default;
   }
 
+  .select-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.2rem;
+    width: 100%;
+    font-family: var(--font-sans);
+    font-size: 0.75rem;
+    letter-spacing: var(--letter-spacing-meta);
+    text-transform: uppercase;
+    color: var(--ink-soft);
+  }
+
+  .select-controls label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .select-controls select {
+    min-height: 44px;
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    border-radius: var(--radius);
+    padding: 0.3rem 0.5rem;
+    font-family: var(--font-sans);
+    font-size: 0.75rem;
+    letter-spacing: var(--letter-spacing-meta);
+    text-transform: none;
+    color: var(--ink);
+    cursor: pointer;
+  }
+
+  .select-controls select:hover {
+    border-color: var(--signal);
+  }
+
+  .select-controls select:focus-visible {
+    outline: 2px solid var(--signal);
+    outline-offset: 2px;
+  }
+
   .speed-control {
     display: flex;
     align-items: center;
@@ -180,10 +245,17 @@ import { SITE_TITLE } from "../lib/blog";
     classifySettlement,
     countLiveCells,
     createEmptyGrid,
+    getPatternSize,
     type Grid,
     nextGeneration,
+    PATTERNS,
+    type PatternName,
     randomizeGrid,
+    type Rule,
+    RULESETS,
+    type RuleName,
     setCell,
+    stampPattern,
     toggleCell,
   } from "../lib/game-of-life";
 
@@ -194,6 +266,7 @@ import { SITE_TITLE } from "../lib/blog";
   const ROWS = CANVAS_HEIGHT / CELL_SIZE;
   const FADE_RATE = 10;
   const COLOR_REFRESH_INTERVAL = 0.25;
+  const CELL_AGE_TO_COOL = 20;
 
   const gameState: { controller: AbortController | undefined } = {
     controller: undefined,
@@ -209,6 +282,9 @@ import { SITE_TITLE } from "../lib/blog";
       document.querySelector<HTMLButtonElement>("#randomize");
     const clearButton =
       document.querySelector<HTMLButtonElement>("#clear-grid");
+    const patternSelect =
+      document.querySelector<HTMLSelectElement>("#pattern-select");
+    const ruleSelect = document.querySelector<HTMLSelectElement>("#rule-select");
     const speedInput = document.querySelector<HTMLInputElement>("#speed");
     const speedValue = document.querySelector<HTMLElement>("#speed-value");
     const generationElement =
@@ -222,6 +298,8 @@ import { SITE_TITLE } from "../lib/blog";
       !stepButton ||
       !randomizeButton ||
       !clearButton ||
+      !patternSelect ||
+      !ruleSelect ||
       !speedInput ||
       !speedValue ||
       !generationElement ||
@@ -241,13 +319,18 @@ import { SITE_TITLE } from "../lib/blog";
     canvas.height = CANVAS_HEIGHT * dpr;
     context.scale(dpr, dpr);
 
+    const createAgeGrid = () =>
+      Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => 0));
+
     let grid: Grid = randomizeGrid(ROWS, COLS);
+    let ages = createAgeGrid();
     const displayAlpha: number[][] = createEmptyGrid(ROWS, COLS).map((line) =>
       line.map(() => 0)
     );
     let isRunning = true;
     let speed = Number(speedInput.value);
     let generation = 0;
+    let currentRule: Rule = RULESETS.conway;
     let cursorRow = Math.floor(ROWS / 2);
     let cursorCol = Math.floor(COLS / 2);
     let paintValue: boolean | undefined;
@@ -266,11 +349,21 @@ import { SITE_TITLE } from "../lib/blog";
       populationElement.textContent = String(countLiveCells(grid));
     };
 
+    const updateAges = () => {
+      for (let row = 0; row < ROWS; row++) {
+        for (let col = 0; col < COLS; col++) {
+          const isAlive = grid[row]![col];
+          ages[row]![col] = isAlive ? ages[row]![col]! + 1 : 0;
+        }
+      }
+    };
+
     const step = () => {
-      const next = nextGeneration(grid);
+      const next = nextGeneration(grid, currentRule);
       generation += 1;
       const settlement = classifySettlement(grid, next);
       grid = next;
+      updateAges();
       updateStats();
       if (settlement !== "running") {
         isRunning = false;
@@ -290,6 +383,7 @@ import { SITE_TITLE } from "../lib/blog";
 
     const resetGame = (newGrid: Grid, shouldRun: boolean, message: string) => {
       grid = newGrid;
+      ages = createAgeGrid();
       generation = 0;
       isRunning = shouldRun;
       updateToggleLabel();
@@ -301,6 +395,26 @@ import { SITE_TITLE } from "../lib/blog";
       resetGame(randomizeGrid(ROWS, COLS), true, "Randomized.");
     const clearGrid = () =>
       resetGame(createEmptyGrid(ROWS, COLS), false, "Cleared.");
+
+    const PATTERN_LABELS: Record<PatternName, string> = {
+      glider: "Glider",
+      pulsar: "Pulsar",
+      gosperGliderGun: "Glider gun",
+    };
+
+    const placePattern = (name: PatternName) => {
+      const pattern = PATTERNS[name];
+      const { rows, cols } = getPatternSize(pattern);
+      const originRow = Math.floor((ROWS - rows) / 2);
+      const originCol = Math.floor((COLS - cols) / 2);
+      const placed = stampPattern(
+        createEmptyGrid(ROWS, COLS),
+        pattern,
+        originRow,
+        originCol
+      );
+      resetGame(placed, true, `Placed the ${PATTERN_LABELS[name]}.`);
+    };
 
     const clampRow = (row: number) => Math.min(Math.max(row, 0), ROWS - 1);
     const clampCol = (col: number) => Math.min(Math.max(col, 0), COLS - 1);
@@ -328,6 +442,28 @@ import { SITE_TITLE } from "../lib/blog";
     randomizeButton.addEventListener("click", randomize, { signal });
     clearButton.addEventListener("click", clearGrid, { signal });
 
+    patternSelect.addEventListener(
+      "change",
+      () => {
+        const name = patternSelect.value as PatternName | "";
+        if (name) placePattern(name);
+        patternSelect.value = "";
+      },
+      { signal }
+    );
+
+    ruleSelect.addEventListener(
+      "change",
+      () => {
+        const name = ruleSelect.value as RuleName;
+        currentRule = RULESETS[name];
+        announce(
+          `Rule set to ${ruleSelect.selectedOptions[0]?.textContent ?? name}.`
+        );
+      },
+      { signal }
+    );
+
     speedInput.addEventListener(
       "input",
       () => {
@@ -346,6 +482,7 @@ import { SITE_TITLE } from "../lib/blog";
         const wasAlive = grid[row]![col];
         paintValue = !wasAlive;
         grid = toggleCell(grid, row, col);
+        ages[row]![col] = 0;
         updateStats();
       },
       { signal }
@@ -356,6 +493,7 @@ import { SITE_TITLE } from "../lib/blog";
         if (paintValue === undefined) return;
         const { row, col } = cellFromPointer(event);
         grid = setCell(grid, row, col, paintValue);
+        ages[row]![col] = 0;
         updateStats();
       },
       { signal }
@@ -395,6 +533,7 @@ import { SITE_TITLE } from "../lib/blog";
           case " ":
           case "Enter": {
             grid = toggleCell(grid, cursorRow, cursorCol);
+            ages[cursorRow]![cursorCol] = 0;
             updateStats();
             event.preventDefault();
             break;
@@ -419,11 +558,26 @@ import { SITE_TITLE } from "../lib/blog";
         ink: style.getPropertyValue("--ink").trim(),
       };
     };
+    const hexToRgb = (hex: string) => {
+      const value = Number.parseInt(hex.replace("#", ""), 16);
+      return { r: (value >> 16) & 255, g: (value >> 8) & 255, b: value & 255 };
+    };
+
+    const mixColor = (
+      from: { r: number; g: number; b: number },
+      to: { r: number; g: number; b: number },
+      amount: number
+    ) => {
+      const lerp = (a: number, b: number) => Math.round(a + (b - a) * amount);
+      return `rgb(${lerp(from.r, to.r)}, ${lerp(from.g, to.g)}, ${lerp(from.b, to.b)})`;
+    };
+
     let colors = readThemeColors();
+    let signalRgb = hexToRgb(colors.signal);
+    let inkRgb = hexToRgb(colors.ink);
 
     const render = () => {
       const { paper, rule, ink } = colors;
-      const signalColor = colors.signal;
 
       context.fillStyle = paper;
       context.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
@@ -443,11 +597,13 @@ import { SITE_TITLE } from "../lib/blog";
       }
       context.stroke();
 
-      context.fillStyle = signalColor;
       for (let row = 0; row < ROWS; row++) {
         for (let col = 0; col < COLS; col++) {
           const alpha = displayAlpha[row]![col]!;
           if (alpha > 0.01) {
+            const cooled = Math.min(ages[row]![col]! / CELL_AGE_TO_COOL, 1);
+            context.fillStyle =
+              cooled > 0 ? mixColor(signalRgb, inkRgb, cooled) : colors.signal;
             context.globalAlpha = alpha;
             context.fillRect(
               col * CELL_SIZE + 1,
@@ -502,6 +658,8 @@ import { SITE_TITLE } from "../lib/blog";
       colorRefreshAccumulator += dt;
       if (colorRefreshAccumulator >= COLOR_REFRESH_INTERVAL) {
         colors = readThemeColors();
+        signalRgb = hexToRgb(colors.signal);
+        inkRgb = hexToRgb(colors.ink);
         colorRefreshAccumulator = 0;
       }
 
