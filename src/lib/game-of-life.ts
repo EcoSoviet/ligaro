@@ -164,10 +164,10 @@ export type Coordinate = readonly [row: number, col: number];
 
 export type Pattern = readonly Coordinate[];
 
-const PULSAR_TRIPLE_ROWS = [0, 5, 7, 12];
-const PULSAR_TRIPLE_COLS = [2, 3, 4, 8, 9, 10];
-const PULSAR_SINGLE_ROWS = [2, 3, 4, 8, 9, 10];
-const PULSAR_SINGLE_COLS = [0, 5, 7, 12];
+// The pulsar's 13x13 body is symmetric: one set of coordinates forms rows
+// of three short dashes, the same set forms columns of three short dashes.
+const PULSAR_DASH_ENDS = [0, 5, 7, 12];
+const PULSAR_DASH_MIDDLES = [2, 3, 4, 8, 9, 10];
 
 /**
 A handful of well-known still lifes, oscillators, and spaceship-emitting
@@ -182,11 +182,11 @@ export const PATTERNS = {
     [2, 2],
   ],
   pulsar: [
-    ...PULSAR_TRIPLE_ROWS.flatMap((row) =>
-      PULSAR_TRIPLE_COLS.map((col): Coordinate => [row, col])
+    ...PULSAR_DASH_ENDS.flatMap((row) =>
+      PULSAR_DASH_MIDDLES.map((col): Coordinate => [row, col])
     ),
-    ...PULSAR_SINGLE_ROWS.flatMap((row) =>
-      PULSAR_SINGLE_COLS.map((col): Coordinate => [row, col])
+    ...PULSAR_DASH_MIDDLES.flatMap((row) =>
+      PULSAR_DASH_ENDS.map((col): Coordinate => [row, col])
     ),
   ],
   gosperGliderGun: [

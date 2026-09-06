@@ -255,7 +255,6 @@ import { SITE_TITLE } from "../lib/blog";
     type RuleName,
     setCell,
     stampPattern,
-    toggleCell,
   } from "../lib/game-of-life";
 
   const CANVAS_WIDTH = 480;
@@ -319,14 +318,12 @@ import { SITE_TITLE } from "../lib/blog";
     canvas.height = CANVAS_HEIGHT * dpr;
     context.scale(dpr, dpr);
 
-    const createAgeGrid = () =>
-      Array.from({ length: ROWS }, () => Array.from({ length: COLS }, () => 0));
+    const createNumberGrid = (): number[][] =>
+      createEmptyGrid(ROWS, COLS).map((line) => line.map(() => 0));
 
     let grid: Grid = randomizeGrid(ROWS, COLS);
-    let ages = createAgeGrid();
-    const displayAlpha: number[][] = createEmptyGrid(ROWS, COLS).map((line) =>
-      line.map(() => 0)
-    );
+    let ages = createNumberGrid();
+    const displayAlpha: number[][] = createNumberGrid();
     let isRunning = true;
     let speed = Number(speedInput.value);
     let generation = 0;
@@ -383,7 +380,7 @@ import { SITE_TITLE } from "../lib/blog";
 
     const resetGame = (newGrid: Grid, shouldRun: boolean, message: string) => {
       grid = newGrid;
-      ages = createAgeGrid();
+      ages = createNumberGrid();
       generation = 0;
       isRunning = shouldRun;
       updateToggleLabel();
@@ -396,13 +393,7 @@ import { SITE_TITLE } from "../lib/blog";
     const clearGrid = () =>
       resetGame(createEmptyGrid(ROWS, COLS), false, "Cleared.");
 
-    const PATTERN_LABELS: Record<PatternName, string> = {
-      glider: "Glider",
-      pulsar: "Pulsar",
-      gosperGliderGun: "Glider gun",
-    };
-
-    const placePattern = (name: PatternName) => {
+    const placePattern = (name: PatternName, label: string) => {
       const pattern = PATTERNS[name];
       const { rows, cols } = getPatternSize(pattern);
       const originRow = Math.floor((ROWS - rows) / 2);
@@ -413,7 +404,7 @@ import { SITE_TITLE } from "../lib/blog";
         originRow,
         originCol
       );
-      resetGame(placed, true, `Placed the ${PATTERN_LABELS[name]}.`);
+      resetGame(placed, true, `Placed the ${label}.`);
     };
 
     const clampRow = (row: number) => Math.min(Math.max(row, 0), ROWS - 1);
@@ -446,7 +437,10 @@ import { SITE_TITLE } from "../lib/blog";
       "change",
       () => {
         const name = patternSelect.value as PatternName | "";
-        if (name) placePattern(name);
+        if (name) {
+          const label = patternSelect.selectedOptions[0]?.textContent ?? name;
+          placePattern(name, label);
+        }
         patternSelect.value = "";
       },
       { signal }
@@ -473,6 +467,11 @@ import { SITE_TITLE } from "../lib/blog";
       { signal }
     );
 
+    const paintCell = (row: number, col: number, isAlive: boolean) => {
+      grid = setCell(grid, row, col, isAlive);
+      ages[row]![col] = 0;
+    };
+
     canvas.addEventListener(
       "pointerdown",
       (event) => {
@@ -481,8 +480,7 @@ import { SITE_TITLE } from "../lib/blog";
         cursorCol = col;
         const wasAlive = grid[row]![col];
         paintValue = !wasAlive;
-        grid = toggleCell(grid, row, col);
-        ages[row]![col] = 0;
+        paintCell(row, col, paintValue);
         updateStats();
       },
       { signal }
@@ -492,8 +490,7 @@ import { SITE_TITLE } from "../lib/blog";
       (event) => {
         if (paintValue === undefined) return;
         const { row, col } = cellFromPointer(event);
-        grid = setCell(grid, row, col, paintValue);
-        ages[row]![col] = 0;
+        paintCell(row, col, paintValue);
         updateStats();
       },
       { signal }
@@ -532,8 +529,8 @@ import { SITE_TITLE } from "../lib/blog";
           }
           case " ":
           case "Enter": {
-            grid = toggleCell(grid, cursorRow, cursorCol);
-            ages[cursorRow]![cursorCol] = 0;
+            const wasAlive = grid[cursorRow]![cursorCol];
+            paintCell(cursorRow, cursorCol, !wasAlive);
             updateStats();
             event.preventDefault();
             break;
@@ -558,23 +555,34 @@ import { SITE_TITLE } from "../lib/blog";
         ink: style.getPropertyValue("--ink").trim(),
       };
     };
-    const hexToRgb = (hex: string) => {
+    type Rgb = { r: number; g: number; b: number };
+
+    const hexToRgb = (hex: string): Rgb => {
       const value = Number.parseInt(hex.replace("#", ""), 16);
       return { r: (value >> 16) & 255, g: (value >> 8) & 255, b: value & 255 };
     };
 
-    const mixColor = (
-      from: { r: number; g: number; b: number },
-      to: { r: number; g: number; b: number },
-      amount: number
-    ) => {
-      const lerp = (a: number, b: number) => Math.round(a + (b - a) * amount);
-      return `rgb(${lerp(from.r, to.r)}, ${lerp(from.g, to.g)}, ${lerp(from.b, to.b)})`;
-    };
+    const lerp = (a: number, b: number, amount: number) =>
+      Math.round(a + (b - a) * amount);
+
+    const mixColor = (from: Rgb, to: Rgb, amount: number) =>
+      `rgb(${lerp(from.r, to.r, amount)}, ${lerp(from.g, to.g, amount)}, ${lerp(from.b, to.b, amount)})`;
+
+    /**
+     * One colour per possible age from fresh (0) to fully cooled
+     * (CELL_AGE_TO_COOL), precomputed whenever the theme colours refresh
+     * rather than blended per cell on every animation frame.
+     */
+    const buildCellColorsByAge = (signalRgb: Rgb, inkRgb: Rgb) =>
+      Array.from({ length: CELL_AGE_TO_COOL + 1 }, (_, age) =>
+        mixColor(signalRgb, inkRgb, age / CELL_AGE_TO_COOL)
+      );
 
     let colors = readThemeColors();
-    let signalRgb = hexToRgb(colors.signal);
-    let inkRgb = hexToRgb(colors.ink);
+    let cellColorsByAge = buildCellColorsByAge(
+      hexToRgb(colors.signal),
+      hexToRgb(colors.ink)
+    );
 
     const render = () => {
       const { paper, rule, ink } = colors;
@@ -601,9 +609,8 @@ import { SITE_TITLE } from "../lib/blog";
         for (let col = 0; col < COLS; col++) {
           const alpha = displayAlpha[row]![col]!;
           if (alpha > 0.01) {
-            const cooled = Math.min(ages[row]![col]! / CELL_AGE_TO_COOL, 1);
-            context.fillStyle =
-              cooled > 0 ? mixColor(signalRgb, inkRgb, cooled) : colors.signal;
+            const age = Math.min(ages[row]![col]!, CELL_AGE_TO_COOL);
+            context.fillStyle = cellColorsByAge[age]!;
             context.globalAlpha = alpha;
             context.fillRect(
               col * CELL_SIZE + 1,
@@ -658,8 +665,10 @@ import { SITE_TITLE } from "../lib/blog";
       colorRefreshAccumulator += dt;
       if (colorRefreshAccumulator >= COLOR_REFRESH_INTERVAL) {
         colors = readThemeColors();
-        signalRgb = hexToRgb(colors.signal);
-        inkRgb = hexToRgb(colors.ink);
+        cellColorsByAge = buildCellColorsByAge(
+          hexToRgb(colors.signal),
+          hexToRgb(colors.ink)
+        );
         colorRefreshAccumulator = 0;
       }
 
