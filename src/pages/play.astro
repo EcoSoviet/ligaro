@@ -486,7 +486,7 @@ import { SITE_TITLE } from "../lib/blog";
     let stepAccumulator = 0;
     let colorRefreshAccumulator = 0;
     const loop = (timestamp: number) => {
-      if (!canvas.isConnected) return;
+      if (!canvas.isConnected || signal.aborted) return;
       const dt = Math.min((timestamp - (lastTime ?? timestamp)) / 1000, 1 / 20);
       lastTime = timestamp;
 
@@ -517,4 +517,16 @@ import { SITE_TITLE } from "../lib/blog";
   }
 
   document.addEventListener("astro:page-load", initLife);
+
+  /**
+   * Safari (and, less often, Chrome) can restore this page from the
+   * back/forward cache without re-running module scripts or refiring
+   * `astro:page-load`, which Astro's router never listens for. That leaves
+   * the canvas exactly as the browser froze it — sometimes mid-animation,
+   * sometimes not started at all — until the user reloads. Re-running init
+   * on a persisted pageshow covers that case without waiting for a refresh.
+   */
+  window.addEventListener("pageshow", (event) => {
+    if (event.persisted) initLife();
+  });
 </script>
